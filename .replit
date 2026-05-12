@@ -38,7 +38,7 @@ task = "shell.exec"
 args = "python3 bot.py"
 
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
 
 [postMerge]
