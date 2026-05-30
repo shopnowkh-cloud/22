@@ -12,7 +12,7 @@ import imageio_ffmpeg
 _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 from langdetect import detect as langdetect_detect, detect_langs, DetectorFactory
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, CopyTextButton, constants
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, CopyTextButton, constants
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from telegram.request import HTTPXRequest
 
@@ -795,6 +795,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mark_user_known(user.id)
         asyncio.create_task(notify_admin_new_user(context.bot, user))
     last_name = user.last_name or user.first_name or "បងប្អូន"
+    # Remove any old persistent reply keyboard first
+    await update.message.reply_text("​", reply_markup=ReplyKeyboardRemove())
     await update.message.reply_text(
         f'<tg-emoji emoji-id="5472055112702629499">👋</tg-emoji> <b>សួស្តី</b> {last_name}\n\n'
         '<b>ខ្ញុំជា Text to voice bot</b>\n\n'
