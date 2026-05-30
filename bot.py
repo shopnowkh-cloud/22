@@ -549,11 +549,36 @@ def detect_language(text: str) -> str:
 
     return 'en'
 
-async def _synth_segment_pcm(text: str, voice: str, lang: str = 'en', rate: str = '+0%') -> bytes:
-    """Synthesize one segment to raw PCM s16le 48000Hz mono via bundled ffmpeg."""
-    text = strip_unspeakable(text).strip()
-    if not text or not has_speakable_content(text):
-        return b''
+_CHUNK_SIZE = 2000  # characters per edge-tts call (no hard limit for users)
+
+def _split_into_chunks(text: str, size: int = _CHUNK_SIZE) -> list:
+    """Split long text into chunks at sentence/word boundaries."""
+    if len(text) <= size:
+        return [text]
+    chunks = []
+    while text:
+        if len(text) <= size:
+            chunks.append(text)
+            break
+        # Try to cut at sentence boundary (។ . ! ?)
+        cut = -1
+        for sep in ['។', '. ', '! ', '? ', '\n']:
+            idx = text.rfind(sep, 0, size)
+            if idx > size // 2:
+                cut = idx + len(sep)
+                break
+        # Fall back to word boundary
+        if cut == -1:
+            cut = text.rfind(' ', 0, size)
+        # Fall back to hard cut
+        if cut <= 0:
+            cut = size
+        chunks.append(text[:cut])
+        text = text[cut:]
+    return chunks
+
+async def _synth_chunk_pcm(text: str, voice: str, rate: str = '+0%') -> bytes:
+    """Synthesize a single chunk (≤ _CHUNK_SIZE chars) to PCM."""
     try:
         proc = await asyncio.create_subprocess_exec(
             _FFMPEG, "-y", "-f", "mp3", "-i", "pipe:0",
@@ -570,8 +595,24 @@ async def _synth_segment_pcm(text: str, voice: str, lang: str = 'en', rate: str 
         stdout, _ = await proc.communicate()
         return stdout
     except Exception as e:
-        logging.warning(f"Skipping segment due to error: {e!r} | text={text[:30]!r}")
+        logging.warning(f"Skipping chunk due to error: {e!r} | text={text[:30]!r}")
         return b''
+
+async def _synth_segment_pcm(text: str, voice: str, lang: str = 'en', rate: str = '+0%') -> bytes:
+    """Synthesize one segment (any length) to raw PCM s16le 48000Hz mono."""
+    text = strip_unspeakable(text).strip()
+    if not text or not has_speakable_content(text):
+        return b''
+    chunks = _split_into_chunks(text)
+    if len(chunks) == 1:
+        return await _synth_chunk_pcm(chunks[0], voice, rate=rate)
+    # Synthesize chunks sequentially and concatenate PCM
+    parts = []
+    for chunk in chunks:
+        pcm = await _synth_chunk_pcm(chunk, voice, rate=rate)
+        if pcm:
+            parts.append(pcm)
+    return b''.join(parts)
 
 async def _pcm_to_ogg(pcm: bytes) -> BytesIO:
     """Encode concatenated PCM bytes to OGG Opus via bundled ffmpeg."""
