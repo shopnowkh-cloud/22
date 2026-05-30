@@ -226,18 +226,16 @@ STYLES = [
 
 def apply_all_styles(text: str) -> tuple:
     """Return (message_text, InlineKeyboardMarkup) with copy buttons for each style."""
-    lines = []
     buttons = []
     for name, fn in STYLES:
         styled = fn(text)
-        lines.append(f"{name}\n{styled}")
         buttons.append([
             InlineKeyboardButton(
                 f"📋 {name}",
                 copy_text=CopyTextButton(text=styled),
             )
         ])
-    return '\n\n'.join(lines), InlineKeyboardMarkup(buttons)
+    return "🎨 <b>ជ្រើសរើស Style ហើយចុច Copy:</b>", InlineKeyboardMarkup(buttons)
 
 # ─── All available edge-tts voices — male and female per language ──────────────
 MALE_VOICES = {
