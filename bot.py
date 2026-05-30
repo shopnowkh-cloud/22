@@ -208,20 +208,63 @@ _FK_UPPER_MAP = [
 _T_FRAKTUR = {ord(c): chr(v) for c, v in zip(_DS_UPPER, _FK_UPPER_MAP)}
 _T_FRAKTUR.update({ord('a') + i: chr(0x1D51E + i) for i in range(26)})
 
+# Small Caps
+_SC_SRC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+_SC_DST = 'ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘqʀꜱᴛᴜᴠᴡxʏᴢᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘqʀꜱᴛᴜᴠᴡxʏᴢ'
+_T_SMALLCAPS = str.maketrans(_SC_SRC, _SC_DST)
+
+# Superscript
+_SUP_SRC = 'abcdefghijklmnoprstuvwxyz0123456789'
+_SUP_DST = 'ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻ⁰¹²³⁴⁵⁶⁷⁸⁹'
+_T_SUPER = str.maketrans(_SUP_SRC, _SUP_DST)
+
 def _apply_combining(text: str, combining: str) -> str:
     return ''.join(c + combining if c.strip() else c for c in text)
 
+def _bubble(text: str) -> str:
+    result = []
+    for c in text:
+        if 'A' <= c <= 'Z':
+            result.append(chr(0x24B6 + ord(c) - ord('A')))
+        elif 'a' <= c <= 'z':
+            result.append(chr(0x24D0 + ord(c) - ord('a')))
+        elif '1' <= c <= '9':
+            result.append(chr(0x2460 + ord(c) - ord('1')))
+        elif c == '0':
+            result.append('⓪')
+        else:
+            result.append(c)
+    return ''.join(result)
+
+def _filled_bubble(text: str) -> str:
+    result = []
+    for c in text:
+        if 'A' <= c <= 'Z':
+            result.append(chr(0x1F150 + ord(c) - ord('A')))
+        elif 'a' <= c <= 'z':
+            result.append(chr(0x1F150 + ord(c.upper()) - ord('A')))
+        else:
+            result.append(c)
+    return ''.join(result)
+
 STYLES = [
-    ("𝗕𝗼𝗹𝗱",         lambda t: t.translate(_T_BOLD)),
-    ("𝘐𝘵𝘢𝘭𝘪𝘤",       lambda t: t.translate(_T_ITALIC)),
-    ("𝘽𝙤𝙡𝙙 𝙄𝙩𝙖𝙡𝙞𝙘", lambda t: t.translate(_T_BOLDITALIC)),
-    ("𝓢𝓬𝓻𝓲𝓹𝓽",      lambda t: t.translate(_T_SCRIPT)),
-    ("𝔉𝔯𝔞𝔨𝔱𝔲𝔯",     lambda t: t.translate(_T_FRAKTUR)),
-    ("𝔻𝕠𝕦𝕓𝕝𝕖",      lambda t: t.translate(_T_DOUBLE)),
-    ("𝙼𝚘𝚗𝚘",         lambda t: t.translate(_T_MONO)),
-    ("Ｗｉｄｅ",        lambda t: t.translate(_T_WIDE)),
-    ("S̶t̶r̶i̶k̶e̶",      lambda t: _apply_combining(t, '\u0336')),
-    ("U̲n̲d̲e̲r̲l̲i̲n̲e̲",  lambda t: _apply_combining(t, '\u0332')),
+    ("𝗕𝗼𝗹𝗱",           lambda t: t.translate(_T_BOLD)),
+    ("𝘐𝘵𝘢𝘭𝘪𝘤",         lambda t: t.translate(_T_ITALIC)),
+    ("𝘽𝙤𝙡𝙙 𝙄𝙩𝙖𝙡𝙞𝙘",   lambda t: t.translate(_T_BOLDITALIC)),
+    ("𝓢𝓬𝓻𝓲𝓹𝓽",        lambda t: t.translate(_T_SCRIPT)),
+    ("𝔉𝔯𝔞𝔨𝔱𝔲𝔯",       lambda t: t.translate(_T_FRAKTUR)),
+    ("𝔻𝕠𝕦𝕓𝕝𝕖",        lambda t: t.translate(_T_DOUBLE)),
+    ("𝙼𝚘𝚗𝚘",           lambda t: t.translate(_T_MONO)),
+    ("Ｗｉｄｅ",          lambda t: t.translate(_T_WIDE)),
+    ("ꜱᴍᴀʟʟ ᴄᴀᴘꜱ",    lambda t: t.translate(_T_SMALLCAPS)),
+    ("ˢᵘᵖᵉʳˢᶜʳⁱᵖᵗ",   lambda t: t.translate(_T_SUPER)),
+    ("Ⓑⓤⓑⓑⓛⓔ",       _bubble),
+    ("🅵🅸🅻🅻🅴🅳",      _filled_bubble),
+    ("O̅v̅e̅r̅l̅i̅n̅e̅",    lambda t: _apply_combining(t, '\u0305')),
+    ("S̶t̶r̶i̶k̶e̶",        lambda t: _apply_combining(t, '\u0336')),
+    ("U̲n̲d̲e̲r̲l̲i̲n̲e̲",    lambda t: _apply_combining(t, '\u0332')),
+    ("Ḋo̊ṫṫėḋ",         lambda t: _apply_combining(t, '\u0307')),
+    ("W̴a̴v̴y̴",           lambda t: _apply_combining(t, '\u0334')),
 ]
 
 def apply_all_styles(text: str) -> tuple:
