@@ -693,6 +693,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cached_file_id:
             await update.message.reply_voice(
                 voice=cached_file_id,
+                caption="via @limsovannradybot",
                 reply_markup=keyboard,
             )
         else:
@@ -709,6 +710,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             msg = await update.message.reply_voice(
                 voice=audio_buf,
+                caption="via @limsovannradybot",
                 reply_markup=keyboard,
             )
             _cache_set(cache_key, msg.voice.file_id)
