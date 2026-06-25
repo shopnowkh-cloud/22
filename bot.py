@@ -803,20 +803,14 @@ async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer([], cache_time=5)
         return
 
-    storage_chat_id = os.environ.get("STORAGE_CHAT_ID")
-    if not storage_chat_id:
-        await query.answer([], cache_time=5)
-        logging.warning("STORAGE_CHAT_ID not set — inline mode disabled")
-        return
-
     user_id = query.from_user.id
-    gender = get_gender(user_id)
-    speed  = get_speed(user_id)
-    rate   = SPEED_RATES[speed]
-    vm     = MALE_VOICES if gender == "male" else FEMALE_VOICES
+    gender  = get_gender(user_id)
+    speed   = get_speed(user_id)
+    rate    = SPEED_RATES[speed]
+    vm      = MALE_VOICES if gender == "male" else FEMALE_VOICES
 
-    segments  = segment_text(text)
-    is_mixed  = len(segments) > 1
+    segments = segment_text(text)
+    is_mixed = len(segments) > 1
 
     if is_mixed:
         cache_key = f"inline:mixed:{gender}:{speed}:{text}"
@@ -834,8 +828,10 @@ async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 audio_buf = await synthesize_to_bytes(text, voice, lang=lang, rate=rate)
 
+            # Upload to the user's own private chat to obtain a reusable file_id.
+            # Requires the user to have previously started the bot (/start).
             msg = await context.bot.send_voice(
-                chat_id=storage_chat_id,
+                chat_id=user_id,
                 voice=audio_buf,
             )
             file_id = msg.voice.file_id
