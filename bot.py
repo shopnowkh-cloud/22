@@ -634,18 +634,14 @@ def build_voice_keyboard(gender: str, speed: str) -> InlineKeyboardMarkup:
     gender_btn = InlineKeyboardButton(
         "👩 សំឡេងស្រី" if gender == "male" else "👨 សំឡេងប្រុស",
         callback_data="voice:female" if gender == "male" else "voice:male",
-        style=constants.KeyboardButtonStyle.SUCCESS,
     )
     speed_btn = InlineKeyboardButton(
         "ល្បឿន",
         callback_data=f"speed:{speed}",
-        style=constants.KeyboardButtonStyle.PRIMARY,
-        icon_custom_emoji_id="5445284980978621387",  # 🚀 custom emoji
     )
     style_btn = InlineKeyboardButton(
         "🎨 Style",
         callback_data="open_style",
-        style=constants.KeyboardButtonStyle.PRIMARY,
     )
     return InlineKeyboardMarkup([[gender_btn, speed_btn, style_btn]])
 
@@ -821,10 +817,10 @@ async def handle_gender_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 def build_speed_select_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("x0.5", callback_data="set_speed:x0.5", style=constants.KeyboardButtonStyle.PRIMARY),
-        InlineKeyboardButton("x1",   callback_data="set_speed:x1",   style=constants.KeyboardButtonStyle.SUCCESS),
-        InlineKeyboardButton("x1.5", callback_data="set_speed:x1.5", style=constants.KeyboardButtonStyle.PRIMARY),
-        InlineKeyboardButton("x2",   callback_data="set_speed:x2",   style=constants.KeyboardButtonStyle.PRIMARY),
+        InlineKeyboardButton("x0.5", callback_data="set_speed:x0.5"),
+        InlineKeyboardButton("x1",   callback_data="set_speed:x1"),
+        InlineKeyboardButton("x1.5", callback_data="set_speed:x1.5"),
+        InlineKeyboardButton("x2",   callback_data="set_speed:x2"),
     ]])
 
 async def handle_speed_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
