@@ -9,3 +9,4 @@ imageio-ffmpeg
 langdetect
 python-telegram-bot
 telegram
+aiohttp

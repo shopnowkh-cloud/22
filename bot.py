@@ -1,18 +1,21 @@
 import os
 import re
 import json
+import hashlib
+import threading
 import unicodedata
 import asyncio
 import logging
 from io import BytesIO
 from collections import OrderedDict
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import edge_tts
 import imageio_ffmpeg
 
 _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 from langdetect import detect as langdetect_detect, detect_langs, DetectorFactory
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineQueryResultCachedVoice, constants
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineQueryResultVoice, constants
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, InlineQueryHandler, ContextTypes, filters
 from telegram.request import HTTPXRequest
 
@@ -42,6 +45,41 @@ def has_speakable_content(text: str) -> bool:
 # Cache Telegram file_id for repeated text — avoids re-upload (instant resend)
 _FILE_ID_CACHE: OrderedDict[str, str] = OrderedDict()
 _CACHE_MAX = 200
+
+# In-memory store for inline audio served over HTTP (key → ogg bytes)
+_AUDIO_STORE: OrderedDict[str, bytes] = OrderedDict()
+_AUDIO_STORE_MAX = 100
+
+def _store_audio(key: str, data: bytes):
+    if key not in _AUDIO_STORE:
+        if len(_AUDIO_STORE) >= _AUDIO_STORE_MAX:
+            _AUDIO_STORE.popitem(last=False)
+        _AUDIO_STORE[key] = data
+
+# ─── Inline audio HTTP server (runs in a daemon thread) ──────────────────────
+class _AudioHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/voice/"):
+            key  = self.path[len("/voice/"):]
+            data = _AUDIO_STORE.get(key)
+            if data:
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/ogg")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # suppress access logs
+
+def _start_audio_server(port: int = 5000):
+    server = HTTPServer(("0.0.0.0", port), _AudioHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logging.info(f"Audio server listening on port {port}")
 
 def _cache_get(key: str):
     if key in _FILE_ID_CACHE:
@@ -797,17 +835,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query
-    text = (query.query or "").strip()
+    text  = (query.query or "").strip()
 
     if not text or not has_speakable_content(text):
         await query.answer([], cache_time=5)
         return
 
-    user_id = query.from_user.id
-    gender  = get_gender(user_id)
-    speed   = get_speed(user_id)
-    rate    = SPEED_RATES[speed]
-    vm      = MALE_VOICES if gender == "male" else FEMALE_VOICES
+    user_id  = query.from_user.id
+    gender   = get_gender(user_id)
+    speed    = get_speed(user_id)
+    rate     = SPEED_RATES[speed]
+    vm       = MALE_VOICES if gender == "male" else FEMALE_VOICES
 
     segments = segment_text(text)
     is_mixed = len(segments) > 1
@@ -819,38 +857,35 @@ async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE
         voice = vm.get(lang) or vm.get('en')
         cache_key = f"inline:{voice}:{speed}:{text}"
 
-    file_id = _cache_get(cache_key)
+    audio_key = hashlib.md5(cache_key.encode()).hexdigest()
 
-    if not file_id:
+    # Synthesize only if not already in the audio store
+    if audio_key not in _AUDIO_STORE:
         try:
             if is_mixed:
                 audio_buf = await synthesize_mixed(segments, vm, rate=rate)
             else:
                 audio_buf = await synthesize_to_bytes(text, voice, lang=lang, rate=rate)
-
-            # Upload to admin's private chat to obtain a reusable file_id.
-            # User's chat is never touched during search — voice only appears
-            # in the target chat when the user actually taps the inline result.
-            msg = await context.bot.send_voice(
-                chat_id=ADMIN_ID,
-                voice=audio_buf,
-            )
-            file_id = msg.voice.file_id
-            _cache_set(cache_key, file_id)
+            _store_audio(audio_key, audio_buf.getvalue())
         except Exception as e:
             logging.error(f"Inline TTS error: {e}")
             await query.answer([], cache_time=5)
             return
 
-    title = text if len(text) <= 50 else text[:50] + "…"
-    result = InlineQueryResultCachedVoice(
+    # Serve audio via HTTP — no message is sent to any chat during search.
+    # Voice only appears in the target chat when the user taps the result.
+    public_host = os.environ.get("REPLIT_DEV_DOMAIN", "")
+    voice_url   = f"https://{public_host}/voice/{audio_key}"
+    title       = text if len(text) <= 50 else text[:50] + "…"
+
+    result = InlineQueryResultVoice(
         id="tts_1",
-        voice_file_id=file_id,
+        voice_url=voice_url,
         title=title,
         caption='<tg-emoji emoji-id="5388632425314140043">🔈</tg-emoji> @limsovannradybot',
         parse_mode="HTML",
     )
-    await query.answer([result], cache_time=30)
+    await query.answer([result], cache_time=300)
 
 
 def create_app():
@@ -879,4 +914,5 @@ def create_app():
     return application
 
 if __name__ == "__main__":
+    _start_audio_server(port=5000)
     create_app().run_polling(drop_pending_updates=True, timeout=30)
