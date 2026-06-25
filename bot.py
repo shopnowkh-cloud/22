@@ -12,8 +12,8 @@ import imageio_ffmpeg
 _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 from langdetect import detect as langdetect_detect, detect_langs, DetectorFactory
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, constants
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineQueryResultCachedVoice, constants
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, InlineQueryHandler, ContextTypes, filters
 from telegram.request import HTTPXRequest
 
 def strip_unspeakable(text: str) -> str:
@@ -795,6 +795,67 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⚠️ មានបញ្ហាក្នុងការបង្កើតសំឡេង។ សូមព្យាយាមម្តងទៀត។",
         )
 
+async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.inline_query
+    text = (query.query or "").strip()
+
+    if not text or not has_speakable_content(text):
+        await query.answer([], cache_time=5)
+        return
+
+    storage_chat_id = os.environ.get("STORAGE_CHAT_ID")
+    if not storage_chat_id:
+        await query.answer([], cache_time=5)
+        logging.warning("STORAGE_CHAT_ID not set — inline mode disabled")
+        return
+
+    user_id = query.from_user.id
+    gender = get_gender(user_id)
+    speed  = get_speed(user_id)
+    rate   = SPEED_RATES[speed]
+    vm     = MALE_VOICES if gender == "male" else FEMALE_VOICES
+
+    segments  = segment_text(text)
+    is_mixed  = len(segments) > 1
+
+    if is_mixed:
+        cache_key = f"inline:mixed:{gender}:{speed}:{text}"
+    else:
+        lang  = segments[0][1]
+        voice = vm.get(lang) or vm.get('en')
+        cache_key = f"inline:{voice}:{speed}:{text}"
+
+    file_id = _cache_get(cache_key)
+
+    if not file_id:
+        try:
+            if is_mixed:
+                audio_buf = await synthesize_mixed(segments, vm, rate=rate)
+            else:
+                audio_buf = await synthesize_to_bytes(text, voice, lang=lang, rate=rate)
+
+            msg = await context.bot.send_voice(
+                chat_id=storage_chat_id,
+                voice=audio_buf,
+            )
+            file_id = msg.voice.file_id
+            _cache_set(cache_key, file_id)
+        except Exception as e:
+            logging.error(f"Inline TTS error: {e}")
+            await query.answer([], cache_time=5)
+            return
+
+    title = text if len(text) <= 50 else text[:50] + "…"
+    result = InlineQueryResultCachedVoice(
+        id="tts_1",
+        voice_file_id=file_id,
+        title=title,
+        caption='<tg-emoji emoji-id="5388632425314140043">🔈</tg-emoji> @limsovannradybot',
+        parse_mode="HTML",
+    )
+    await query.answer([result], cache_time=30)
+
+
 def create_app():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     request = HTTPXRequest(
@@ -815,6 +876,7 @@ def create_app():
     application.add_handler(CallbackQueryHandler(handle_gender_callback, pattern="^voice:"))
     application.add_handler(CallbackQueryHandler(handle_speed_callback, pattern="^speed:"))
     application.add_handler(CallbackQueryHandler(handle_set_speed_callback, pattern="^set_speed:"))
+    application.add_handler(InlineQueryHandler(handle_inline_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_error_handler(error_handler)
     return application
