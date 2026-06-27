@@ -48,3 +48,9 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["ffmpeg-full"]
+
+[userenv]
+
+[userenv.shared]
+CF_ACCOUNT_ID = "5d96b71cc0849a08b2f957f8af4c38a0"
+CF_WORKER_NAME = "telegram-tts-bot"
